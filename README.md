@@ -29,14 +29,24 @@ Build with:
 dotnet build BlockLimits.sln -c Release
 ```
 
-The plugin version lives in `Version.Build.props` (committed, imported by `Directory.Build.props`).
-Bump the version there.
+The plugin version lives in `Version.Build.props`. Bump the version there.
 
-`Directory.Build.props.template` is a template for `Directory.Build.props`, a local, **not
-committed** config file you can use to override the reference folder paths (`Bin64`, `Pulsar`,
-`Magnetar`, `Dedicated64`). Running `setup.py` copies the template to `Directory.Build.props`
-if it does not exist yet and fills in the auto-detected paths. Leaving a path empty falls back
-to the platform-specific auto-detection (Windows and Linux) further down in the file.
+`Directory.Build.props` auto-detects the Dedicated Server (`Dedicated64`) and the Magnetar
+installation holding `PluginSdk.dll` (`Magnetar`). To override them, put your local paths into
+`Directory.Build.props.user`, which is not committed. Running `setup.py` writes that file for you.
+
+## Development
+
+Load the working copy through a Magnetar development folder: start Magnetar with `-sources` and
+add the repository with the Sources button. Magnetar then compiles the plugin from source.
+
+Builds deploy nothing by default. To copy the build into Magnetar's `Local` plugin folder, set
+`MagnetarData` to the Magnetar config folder (the one holding `Local`, `Sources` and `Profiles`)
+in `Directory.Build.props.user`, or pass it to a single build:
+
+```bash
+dotnet build BlockLimits.sln -p:MagnetarData=$HOME/.config/Magnetar/Magnetar
+```
 
 Functionality is inspired by and reimplements the original Torch plugin
 BlockLimiter by N1Ran: https://github.com/N1Ran/BlockLimiter
