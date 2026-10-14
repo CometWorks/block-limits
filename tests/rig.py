@@ -28,9 +28,9 @@ Paths, all overridable by environment variables:
     BL_REMOTE_REPO           Remote plugin working copy
     BL_DIRECT_TRANSPORT_REPO DirectTransport working copy
 
-BL_SERVER_DEV_FOLDERS adds dev folders to the server, as name|folder|file
-entries separated by ";". Use it for core plugins Magnetar can't download, on
-a machine GitHub's API rate limits.
+The server and the clients download hub plugins from GitHub. On a machine
+GitHub's API rate limits, export PULSAR_GITHUB_TOKEN: Pulsar and Magnetar read
+it from the environment the rig passes on.
 """
 
 from __future__ import annotations
@@ -274,17 +274,17 @@ class Server:
             shutil.copy(template / "config.xml", self.config / "config.xml")
             if (template / "GitHub").exists():
                 shutil.copytree(template / "GitHub", self.config / "GitHub")
-        sources = {
-            "block-limits": (REPO, "BlockLimits.xml"),
-            "block-limits-probe": (PROBE, "BlockLimitsProbe.xml"),
-            "direct-transport": (DIRECT_TRANSPORT_REPO, "DirectTransportServer.xml"),
-        }
-        for entry in filter(
-            None, os.environ.get("BL_SERVER_DEV_FOLDERS", "").split(";")
-        ):
-            name, folder, file = entry.split("|")
-            sources[name] = (Path(folder), file)
-        write_sources(self.config / "Sources" / "sources.xml", sources)
+        write_sources(
+            self.config / "Sources" / "sources.xml",
+            {
+                "block-limits": (REPO, "BlockLimits.xml"),
+                "block-limits-probe": (PROBE, "BlockLimitsProbe.xml"),
+                "direct-transport": (
+                    DIRECT_TRANSPORT_REPO,
+                    "DirectTransportServer.xml",
+                ),
+            },
+        )
         (self.config / "Profiles").mkdir(exist_ok=True)
         (self.config / "Profiles" / "Current.xml").write_text(
             profile_xml(["direct-transport", BLOCK_LIMITS_ID, PROBE_ID]),
