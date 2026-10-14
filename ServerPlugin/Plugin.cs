@@ -128,15 +128,20 @@ public class Plugin : IPlugin, ICommonPlugin
         if (Config?.Enabled != true || grid == null || block == null)
             return;
 
+        // Counts of the world as it is now, so blocks removed since the last
+        // count no longer hold a place
+        Limits.RecalculateWithout(block);
+
         long identityId = block.BuiltBy != 0 ? block.BuiltBy : block.OwnerId;
         if (!Limits.CanAddBlock(grid, block.BlockDefinition, identityId, 1, out string limitName))
         {
             Log.Info("Removing block over limit '{0}': {1} on {2}", limitName, block.BlockDefinition.BlockPairName, grid.DisplayName);
             NotifyPlacementBlocked(identityId, block.BlockDefinition, limitName);
             grid.RemoveBlock(block);
+            return;
         }
 
-        Limits.Recalculate();
+        Limits.Add(block);
     }
 
     private void NotifyPlacementBlocked(long identityId, MyCubeBlockDefinition definition, string limitName)

@@ -19,7 +19,10 @@ public sealed class BlockLimitService
 
     public bool Enabled => Plugin.Instance?.Config?.Enabled == true;
 
-    public void Recalculate()
+    public void Recalculate() => RecalculateWithout(null);
+
+    /// <summary>Counts every block in the world except one, the block just built</summary>
+    public void RecalculateWithout(MySlimBlock except)
     {
         lock (sync)
         {
@@ -34,9 +37,18 @@ public sealed class BlockLimitService
 
                 CountGridForPlayers(grid);
                 foreach (MySlimBlock block in grid.GetBlocks())
-                    CountBlock(grid, block);
+                {
+                    if (block != except)
+                        CountBlock(grid, block);
+                }
             }
         }
+    }
+
+    public void Add(MySlimBlock block)
+    {
+        lock (sync)
+            CountBlock(block.CubeGrid, block);
     }
 
     public bool CanAdd(List<MySlimBlock> blocks, long identityId, out List<MySlimBlock> deniedBlocks)
@@ -47,6 +59,9 @@ public sealed class BlockLimitService
 
         lock (sync)
         {
+            // Each allowed block holds its place in the player's and faction's
+            // counts, so the blocks asked about count toward the limits together
+            Recalculate();
             foreach (MySlimBlock block in blocks)
             {
                 if (block == null || block.IsDestroyed || block.CubeGrid == null)
@@ -54,7 +69,11 @@ public sealed class BlockLimitService
 
                 if (!CanAddBlock(block.CubeGrid, block.BlockDefinition, identityId, 1, out _))
                     deniedBlocks.Add(block);
+                else
+                    Count(block.CubeGrid, block.BlockDefinition, identityId, false, countGrid: false);
             }
+
+            Recalculate();
         }
 
         return deniedBlocks.Count == 0;
@@ -74,9 +93,12 @@ public sealed class BlockLimitService
             return false;
         }
 
+        MyFaction faction = identityId > 0 ? MySession.Static.Factions.GetPlayerFaction(identityId) : null;
+        bool npc = IsNpc(identityId);
         foreach (LimitRule rule in AllRules(config))
         {
-            if (!RuleMatches(rule, definition) || IsExcepted(rule, identityId) || IsExcepted(rule, grid?.EntityId ?? 0))
+            if (!RuleMatches(rule, definition) || IsExcepted(rule, identityId) || IsExcepted(rule, grid?.EntityId ?? 0) ||
+                IsExcepted(rule, faction?.FactionId ?? 0) || (rule.IgnoreNpcs && npc))
                 continue;
 
             if (!GridMatches(rule, grid))
@@ -103,7 +125,6 @@ public sealed class BlockLimitService
                 return false;
             }
 
-            MyFaction faction = identityId > 0 ? MySession.Static.Factions.GetPlayerFaction(identityId) : null;
             if (rule.LimitFaction && faction != null &&
                 CountFor(rule, LimitScope.Faction, faction.FactionId) + amount > rule.Limit)
             {
@@ -192,21 +213,29 @@ public sealed class BlockLimitService
         if (block == null || block.IsDestroyed || block.BlockDefinition == null)
             return;
 
+        Count(grid, block.BlockDefinition, block.BuiltBy, IsNpc(block.BuiltBy) || IsNpc(block.OwnerId));
+    }
+
+    private void Count(MyCubeGrid grid, MyCubeBlockDefinition definition, long builtBy, bool npc, bool countGrid = true)
+    {
+        MyFaction faction = builtBy != 0 ? MySession.Static.Factions.GetPlayerFaction(builtBy) : null;
         foreach (LimitRule rule in AllRules(Plugin.Instance.Config))
         {
-            if (!RuleMatches(rule, block.BlockDefinition) || !GridMatches(rule, grid))
+            if (!RuleMatches(rule, definition) || !GridMatches(rule, grid) || (rule.IgnoreNpcs && npc))
                 continue;
 
-            AddCount(rule, LimitScope.Grid, grid.EntityId, 1);
+            if (countGrid)
+                AddCount(rule, LimitScope.Grid, grid.EntityId, 1);
 
-            if (block.BuiltBy != 0)
-                AddCount(rule, LimitScope.Player, block.BuiltBy, 1);
+            AddCount(rule, LimitScope.Player, builtBy, 1);
 
-            MyFaction faction = block.BuiltBy != 0 ? MySession.Static.Factions.GetPlayerFaction(block.BuiltBy) : null;
             if (faction != null)
                 AddCount(rule, LimitScope.Faction, faction.FactionId, 1);
         }
     }
+
+    private static bool IsNpc(long identityId)
+        => identityId != 0 && MySession.Static.Players.IdentityIsNpc(identityId);
 
     private static IEnumerable<LimitRule> AllRules(IPluginConfig config)
     {
