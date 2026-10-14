@@ -95,7 +95,7 @@ uv run pytest
 The server and the clients download their hub plugins from GitHub. Where GitHub's API
 rate limits you, export `PULSAR_GITHUB_TOKEN`; Pulsar and Magnetar read it.
 
-A full run takes about 25 minutes, most of it the server and clients starting.
+A full run takes about 26 minutes, most of it the server and clients starting.
 `tests/rig.py` lists the environment variables that point the rig at other
 installations and working copies. To keep the server and clients running between
 runs while you work on a test:
