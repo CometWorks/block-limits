@@ -72,38 +72,60 @@ API_TARGET = pad("API target")
 
 # --- grids (test_grids.py) ---------------------------------------------------
 
-# Two decoys without a builder on a station whose merge block reaches out at
-# +x, and a ship with two more decoys and a merge block touching it. The merge
-# blocks face each other on their local x axes.
-MERGE_STATION = pad(
-    "Merge station",
-    filled={0: ("Decoy", "LargeDecoy", 0), 1: ("Decoy", "LargeDecoy", 0)},
-    extra=block(
+# Merge pairs: a station with decoys without a builder and a merge block at
+# MERGE_CELL, reaching out at +x, and a ship with more decoys and a merge block
+# touching it. The merge blocks face each other on their local x axes. The
+# merge blocks belong to player A. The ship's starts switched off, so the grids
+# merge once a test switches it on. (The other way around they never would: the
+# station's merge block notices the ship only as the world loads.)
+MERGE_CELL = (17, 1, 1)
+
+
+def _merge_pair(name: str, station_decoys: int, ship_decoys: int):
+    station = pad(
+        name,
+        filled={i: ("Decoy", "LargeDecoy", 0) for i in range(station_decoys)},
+    )
+    station.extra = block(
         "MergeBlock",
         "LargeShipMergeBlock",
-        (17, 1, 1),
-        entity_id=0,
-        extra="<Enabled>true</Enabled>",
-    ),
-)
-MERGE_SHIP_ID = MERGE_STATION.entity_id + 500
-MERGE_SHIP_XML = world.grid(
-    "Merge ship",
-    MERGE_SHIP_ID,
-    block(
-        "MergeBlock",
-        "LargeShipMergeBlock",
-        (0, 0, 0),
-        entity_id=MERGE_SHIP_ID + 1,
-        forward="Backward",
+        MERGE_CELL,
+        built_by=PLAYER_A,
+        entity_id=station.entity_id + 600,
         extra="<Enabled>true</Enabled>",
     )
-    + "".join(block("CubeBlock", "LargeBlockArmorBlock", (x, 0, 0)) for x in (1, 2, 3))
-    + block("Decoy", "LargeDecoy", (2, 1, 0), entity_id=MERGE_SHIP_ID + 2)
-    + block("Decoy", "LargeDecoy", (3, 1, 0), entity_id=MERGE_SHIP_ID + 3),
-    tuple(a + 2.5 * b for a, b in zip(MERGE_STATION.position, (18, 1, 1))),
-    static=False,
-)
+    ship_id = station.entity_id + 500
+    ship = world.grid(
+        name + " ship",
+        ship_id,
+        block(
+            "MergeBlock",
+            "LargeShipMergeBlock",
+            (0, 0, 0),
+            built_by=PLAYER_A,
+            entity_id=ship_id + 1,
+            forward="Backward",
+            extra="<Enabled>false</Enabled>",
+        )
+        + "".join(
+            block("CubeBlock", "LargeBlockArmorBlock", (x, 0, 0)) for x in (1, 2, 3)
+        )
+        + "".join(
+            block("Decoy", "LargeDecoy", (x, 1, 0), entity_id=ship_id + 2 + x)
+            for x in range(4 - ship_decoys, 4)
+        ),
+        tuple(a + 2.5 * b for a, b in zip(station.position, (18, 1, 1))),
+        static=False,
+    )
+    return station, ship_id, ship
+
+
+# Two and two decoys, three allowed per grid: refused
+MERGE_STATION, MERGE_SHIP_ID, _merge_ship = _merge_pair("Merge station", 2, 2)
+MERGE_BLOCK_ID = MERGE_STATION.entity_id + 600
+MERGE_SHIP_BLOCK_ID = MERGE_SHIP_ID + 1
+# One and two: merges
+MERGE_OK, MERGE_OK_SHIP_ID, _merge_ok_ship = _merge_pair("Merge OK", 1, 2)
 
 
 def _lattice(x0: int, sockets: int) -> list:
@@ -132,6 +154,17 @@ SPLIT = pad(
     + "".join(
         block("Decoy", "LargeDecoy", c, entity_id=777_900_000_000 + i)
         for i, c in enumerate([(1, 1, 1), (3, 1, 1), (9, 1, 1), (11, 1, 1)])
+    ),
+)
+
+# The same, its armor built by player A and no decoys: a grid of A's that splits
+# in two
+SPLIT_A = pad(
+    "Split A",
+    bare=True,
+    extra="".join(
+        block("CubeBlock", "LargeBlockArmorBlock", c, built_by=PLAYER_A)
+        for c in _lattice(0, 3) + [SPLIT_BRIDGE] + _lattice(8, 3)
     ),
 )
 
@@ -203,7 +236,6 @@ SIZE_LARGE_STATIC = pad("Size large static", sockets=4)
 SIZE_LARGE_SHIP = pad("Size large ship", sockets=4, static=False)
 SIZE_SMALL_STATIC = pad("Size small static", sockets=4, size="Small")
 SIZE_SMALL_SHIP = pad("Size small ship", sockets=4, size="Small", static=False)
-SIZE_LARGE_STATIC_2 = pad("Size large static 2", sockets=4)
 
 # --- vanilla limits and persistence ------------------------------------------
 
@@ -212,7 +244,7 @@ PERSIST = pad("Persist")
 DISABLED = pad("Disabled")
 
 ALL = list(_pads)
-EXTRA_GRIDS = MERGE_SHIP_XML
+EXTRA_GRIDS = _merge_ship + _merge_ok_ship
 
 
 # The players wait beside the row, where every pad is in streaming range

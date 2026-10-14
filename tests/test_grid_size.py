@@ -1,16 +1,23 @@
 """Grid size limits: the most blocks a small grid, a large grid, a ship and a
 station may have, and the grid count limits per player.
 
-Each test sets the limit one block above the grid's current size, so the first
-block fits and the second doesn't. The other pad shows the limit leaves other
-kinds of grid alone.
+Each size test sets the limit one block above the grid's current size, so the
+first block fits and the second doesn't. The other pad shows the limit leaves
+other kinds of grid alone.
+
+The count tests start new grids with the cube builder's request, sent by the
+probe for player A: a headless client has no placement gizmo to aim one.
 """
 
 from __future__ import annotations
 
+import re
+import time
+
 import pytest
 
 import pads
+import world
 
 ARMOR = {"Large": "LargeBlockArmorBlock", "Small": "SmallBlockArmorBlock"}
 
@@ -39,14 +46,89 @@ def test_grid_size_limit(game, option, limited, other):
     assert place_armor(game, other)[0]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="MaxSmallGridsPerPlayer and MaxLargeGridsPerPlayer are counted, never enforced",
+# Free spots beside the row of pads for new grids, one per request
+_spots = iter(
+    (-80.0 - 10.0 * (i % 4), 0.0, world.PAD_ROW_Z_M - 10.0 * (i // 4))
+    for i in range(100)
 )
-def test_grid_count_limit_per_player(game):
-    """Player A built on many large grids already, one more is too many"""
+OPTION = {"Large": "MaxLargeGridsPerPlayer", "Small": "MaxSmallGridsPerPlayer"}
+
+
+def grid_count(game, size: str) -> int:
+    """Player A's grids of this size, as counted when the config was last put
+    in"""
+    reply = game.a.probe("grids", world.PLAYER_A)
+    match = re.fullmatch(r"Probe grids: small=(\d+) large=(\d+)", reply)
+    assert match, reply
+    return int(match[2] if size == "Large" else match[1])
+
+
+def counted(game, size: str, expected: int, **options) -> None:
+    """Waits until the count of player A's grids is the expected one"""
+    deadline = time.monotonic() + 30
+    while True:
+        game.configure(**options)
+        count = grid_count(game, size)
+        if count == expected:
+            return
+        assert time.monotonic() < deadline, f"{count} {size} grids, not {expected}"
+        time.sleep(1)
+
+
+def new_grid(game, size: str) -> None:
+    reply = game.a.probe("newgrid", world.PLAYER_A, ARMOR[size], *next(_spots))
+    assert reply == "Probe newgrid: sent", reply
+
+
+def denied(game, before, text: str) -> None:
+    deadline = time.monotonic() + 15
+    while text not in [t for _, t in game.a.chat_since(before)]:
+        assert time.monotonic() < deadline, f"No {text!r} in the chat"
+        time.sleep(0.5)
+
+
+@pytest.mark.parametrize("size", ["Large", "Small"])
+def test_grid_count_limit_per_player(game, size):
+    """At the limit, a new grid from the cube builder and a pasted grid are
+    refused; one more allowed lets the next one in"""
     a = game.a
-    assert game.a.probe("grids", a.identity_id) != "Probe grids: small=0 large=0"
-    game.configure(MaxLargeGridsPerPlayer=1)
-    assert not place_armor(game, pads.SIZE_LARGE_STATIC_2)[0]
+    game.configure()
+    count = grid_count(game, size)
+    new_grid(game, size)
+    counted(game, size, count + 1)
+
+    limit = {OPTION[size]: count + 1, "DenyMessage": "{LIMIT}"}
+    game.configure(**limit)
+    message = f"{size} grids per player"
+    before = a.mark()
+    new_grid(game, size)
+    denied(game, before, message)
+
+    before = a.mark()
+    blocks = world.block("CubeBlock", ARMOR[size], (0, 0, 0))
+    name = f"Pasted {size} grid"
+    assert a.paste(name, blocks, next(_spots), size) is None
+    denied(game, before, message)
+    assert not a.grid_named(name)
+    counted(game, size, count + 1, **limit)
+
+    limit[OPTION[size]] = count + 2
+    game.configure(**limit)
+    new_grid(game, size)
+    counted(game, size, count + 2, **limit)
+
+
+def test_split_over_the_grid_limit_is_allowed(game):
+    """Player A's grid splits in two at the limit: both parts stay, and the next
+    new grid is refused"""
+    a = game.a
+    game.configure()
+    count = grid_count(game, "Large")
+    limit = {"MaxLargeGridsPerPlayer": count, "DenyMessage": "{LIMIT}"}
+    game.configure(**limit)
+    a.remove(pads.SPLIT_A.entity_id, pads.SPLIT_BRIDGE)
+    counted(game, "Large", count + 1, **limit)
+
+    before = a.mark()
+    new_grid(game, "Large")
+    denied(game, before, "Large grids per player")

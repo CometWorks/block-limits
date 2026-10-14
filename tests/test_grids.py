@@ -1,25 +1,21 @@
 """Grids changing shape: merging, splitting, pasting and welding a projection.
 
-The plugin hears only of blocks built one at a time (the game's BlockBuilt
-event: the cube builder and projection welding). Merges and pastes bring
-blocks in without it, see the strict xfails.
+Blocks built one at a time reach the plugin through the game's BlockBuilt
+event (the cube builder and projection welding). Merges and pastes have hooks
+of their own, which refuse them as a whole.
 """
 
 from __future__ import annotations
 
 import time
 
-import pytest
-
 import pads
 import world
 from session import DECOYS
 from rig import Rule
 
-NOT_ENFORCED = (
-    "Block Limits checks only blocks built one at a time (BlockBuilt); "
-    "merges and pastes are not checked"
-)
+# The denial message the tests ask for: the limit, the count, the blocks
+DENY = "{LIMIT}|{BC}|{BL}"
 
 
 def wait(condition, timeout: float, message):
@@ -32,25 +28,52 @@ def wait(condition, timeout: float, message):
     return result
 
 
-def merged(game) -> bool:
-    return game.a.server_blocks(pads.MERGE_SHIP_ID) == {}
+def switch_on_merge_block(game, station, ship_id: int) -> set:
+    """Switches the ship's merge block on, standing next to it, and returns the
+    chat mark from before"""
+    a = game.a
+    before = a.mark()
+    a.stand_by(station, pads.MERGE_CELL)
+    try:
+        a.api.set_enabled(ship_id, (0, 0, 0), True)
+        time.sleep(3)
+    finally:
+        a.stand_by()
+    return before
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason=NOT_ENFORCED)
 def test_merge_over_a_grid_limit_is_refused(game):
-    """Two decoys each, three allowed per grid: the merged grid would have four"""
-    wait(lambda: merged(game), 120, "The ship did not merge into the station")
-    blocks = game.a.server_blocks(pads.MERGE_STATION.entity_id)
-    assert blocks.get("LargeDecoy", 0) <= DECOYS.limit
+    """Two decoys each, three allowed per grid: the merged grid would have four.
+    The merge blocks go off, their owner hears why."""
+    game.configure([DECOYS], DenyMessage=DENY)
+    a = game.a
+    before = switch_on_merge_block(game, pads.MERGE_STATION, pads.MERGE_SHIP_ID)
+    denial = wait(
+        lambda: [t for _, t in a.chat_since(before) if t.startswith("Grid decoys|")],
+        30,
+        "No denial for the merge",
+    )
+    assert denial[0] == "Grid decoys|1|Decoy", denial
+    assert a.probe("enabled", pads.MERGE_BLOCK_ID) == "Probe enabled: False"
+    assert a.probe("enabled", pads.MERGE_SHIP_BLOCK_ID) == "Probe enabled: False"
+    time.sleep(5)
+    assert a.server_blocks(pads.MERGE_SHIP_ID).get("LargeDecoy") == 2
+    assert a.server_blocks(pads.MERGE_STATION.entity_id)["LargeDecoy"] == 2
 
 
 def test_merged_grids_count_as_one(game):
+    """One and two decoys merge into a grid with the three allowed"""
     game.configure([DECOYS])
     a = game.a
-    wait(lambda: merged(game), 120, "The ship did not merge into the station")
-    assert a.server_blocks(pads.MERGE_STATION.entity_id)["LargeDecoy"] == 4
-    cell = a.free_socket(pads.MERGE_STATION)
-    assert not a.place(pads.MERGE_STATION.entity_id, cell, "LargeDecoy")[0]
+    station = pads.MERGE_OK.entity_id
+    switch_on_merge_block(game, pads.MERGE_OK, pads.MERGE_OK_SHIP_ID)
+    wait(
+        lambda: a.server_blocks(pads.MERGE_OK_SHIP_ID) == {},
+        60,
+        "The ship did not merge into the station",
+    )
+    assert a.server_blocks(station)["LargeDecoy"] == 3
+    assert not a.place(station, a.free_socket(pads.MERGE_OK), "LargeDecoy")[0]
 
 
 def test_split_grids_count_on_their_own(game):
@@ -78,40 +101,53 @@ def test_split_grids_count_on_their_own(game):
 
 # --- paste -------------------------------------------------------------------
 
-WINDOWS = Rule("Windows", ["VerticalWindow"], 1, players=True)
 PASTE_AT = (-60.0, 0.0, world.PAD_ROW_Z_M)
 
 
-def paste_windows(game) -> int:
+def windows(limit: int) -> Rule:
+    return Rule("Windows", ["VerticalWindow"], limit, players=True)
+
+
+def paste_windows(game, name: str):
+    """Pastes a grid of three windows owned by player A. Returns the pasted
+    grid's id, or None if the server refused the paste."""
     blocks = "".join(
         world.block("CubeBlock", "LargeWindowSquare", (x, 0, 0)) for x in range(3)
     )
-    pasted = game.a.api.paste_blueprint(
-        xml=world.blueprint("Windows", blocks),
-        position=PASTE_AT,
-        display_name="Pasted windows",
-        own=True,
-    )
-    return pasted[0]["entityId"]
+    return game.a.paste(name, blocks, PASTE_AT)
 
 
-@pytest.fixture(scope="module")
-def pasted(game):
-    game.configure([WINDOWS])
-    grid = paste_windows(game)
-    wait(lambda: game.a.server_blocks(grid), 30, "The pasted grid is not on the server")
-    return grid
-
-
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason=NOT_ENFORCED)
-def test_paste_over_a_player_limit_is_refused(game, pasted):
-    assert game.a.server_blocks(pasted).get("LargeWindowSquare", 0) <= WINDOWS.limit
-
-
-def test_pasted_blocks_count_once_counted_again(game, pasted):
-    game.configure([WINDOWS])
+def test_paste_over_a_player_limit_is_refused(game):
+    """Three windows with one allowed: the paste fails as a whole"""
+    game.configure([windows(1)], DenyMessage=DENY)
     a = game.a
-    assert "Windows: player 3/1" in a.report()
+    before = a.mark()
+    assert paste_windows(game, "Refused windows") is None
+    chat = [t for _, t in a.chat_since(before)]
+    assert "Windows|2|VerticalWindow" in chat, chat
+    assert not a.grid_named("Refused windows")
+    assert "Windows: player 0/1" in a.report()
+
+
+def test_paste_over_a_grid_size_limit_is_refused(game):
+    game.configure(MaxBlocksLargeGrid=2, DenyMessage=DENY)
+    a = game.a
+    before = a.mark()
+    assert paste_windows(game, "Big windows") is None
+    chat = [t for _, t in a.chat_since(before)]
+    assert any(t.startswith("Grid size|3|") for t in chat), chat
+    assert not a.grid_named("Big windows")
+
+
+def test_pasted_blocks_count(game):
+    """A paste within the limit goes through and holds its places"""
+    game.configure([windows(3)])
+    a = game.a
+    grid = paste_windows(game, "Pasted windows")
+    assert grid is not None, "The paste was refused"
+    wait(lambda: a.server_blocks(grid), 30, "The pasted grid is not on the server")
+    game.configure([windows(3)])
+    assert "Windows: player 3/3" in a.report()
     kept, _ = a.place(
         pads.PLAYER_A2.entity_id, a.free_socket(pads.PLAYER_A2), "LargeWindowSquare"
     )

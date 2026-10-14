@@ -6,14 +6,19 @@ using System.Linq;
 using System.Reflection;
 using PluginSdk.Commands;
 using PluginSdk.Config;
+using Sandbox.Definitions;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Blocks;
 using Sandbox.Game.Entities.Cube;
 using Sandbox.Game.EntityComponents;
 using Sandbox.Game.Weapons;
+using Sandbox.Game.World;
 using VRage.FileSystem;
+using VRage.Game;
 using VRage.Game.ModAPI;
 using VRage.Plugins;
+using VRage.Utils;
+using VRageMath;
 
 namespace BlockLimitsProbe;
 
@@ -158,13 +163,63 @@ public sealed class ProbeCommands : CommandModule
         if (!(MyEntities.GetEntityById(toolId) is MyShipToolBase tool))
             return "Probe tool: no tool";
 
-        var center = VRageMath.Vector3D.Transform(
-            tool.DetectorSphere.Center,
-            tool.CubeGrid.WorldMatrix
-        );
+        var center = Vector3D.Transform(tool.DetectorSphere.Center, tool.CubeGrid.WorldMatrix);
         var cell = (center - tool.CubeGrid.PositionComp.GetPosition()) / tool.CubeGrid.GridSize;
         return $"Probe tool: center={cell.X:F2},{cell.Y:F2},{cell.Z:F2} radius={tool.DetectorSphere.Radius / tool.CubeGrid.GridSize:F2} "
             + $"enabled={tool.Enabled} functional={tool.IsFunctional} working={tool.IsWorking} "
             + $"powered={tool.ResourceSink?.IsPoweredByType(MyResourceDistributorComponent.ElectricityId)}";
+    }
+
+    [Command("enabled", "Whether a functional block is switched on, on the server.")]
+    [Permission(MyPromoteLevel.Admin)]
+    public string Enabled(long blockId) =>
+        MyEntities.GetEntityById(blockId) is MyFunctionalBlock block
+            ? $"Probe enabled: {block.Enabled}"
+            : "Probe enabled: no block";
+
+    [Command(
+        "newgrid",
+        "Sends the cube builder's request for a new static grid of one block, as a player."
+    )]
+    [Permission(MyPromoteLevel.Admin)]
+    public string NewGrid(long identityId, string subtype, double x, double y, double z)
+    {
+        MyIdentity identity = MySession.Static.Players.TryGetIdentity(identityId);
+        if (identity?.Character == null)
+            return "Probe newgrid: no character";
+
+        MyCubeBlockDefinition definition = MyDefinitionManager
+            .Static.GetAllDefinitions()
+            .OfType<MyCubeBlockDefinition>()
+            .FirstOrDefault(d => d.Id.SubtypeName == subtype);
+        if (definition == null)
+            return "Probe newgrid: no block";
+
+        // MyCubeBuilder.RequestGridSpawn(GridSpawnRequestData), private like its types
+        const BindingFlags Private = BindingFlags.NonPublic | BindingFlags.Static;
+        Type builder = typeof(MyCubeBuilder);
+        Type requestType = builder.GetNestedType("GridSpawnRequestData", BindingFlags.NonPublic);
+        object author = Activator.CreateInstance(
+            builder.GetNestedType("Author", BindingFlags.NonPublic),
+            identity.Character.EntityId,
+            identityId
+        );
+        object position = Activator.CreateInstance(requestType.GetField("Position").FieldType);
+        Type positionType = position.GetType();
+        positionType.GetField("Position").SetValue(position, new Vector3D(x, y, z));
+        positionType.GetField("Forward").SetValue(position, Vector3.Forward);
+        positionType.GetField("Up").SetValue(position, Vector3.Up);
+        positionType.GetField("AbsolutePosition").SetValue(position, true);
+        object request = Activator.CreateInstance(
+            requestType,
+            author,
+            (DefinitionIdBlit)definition.Id,
+            position,
+            false,
+            true,
+            new MyCubeGrid.MyBlockVisuals(0, MyStringHash.NullOrEmpty)
+        );
+        builder.GetMethod("RequestGridSpawn", Private).Invoke(null, new[] { request });
+        return "Probe newgrid: sent";
     }
 }
