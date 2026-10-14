@@ -5,7 +5,7 @@
     <Id>9103FB18-9813-4B64-9D87-A58434266D93</Id>
 
     <!-- GitHub repository ID -->
-    <RepoId>OwendB1/SE-BlockLimits</RepoId>
+    <RepoId>CometWorks/block-limits</RepoId>
 
     <!-- The name of your plugin that will appear in the plugin list -->
     <FriendlyName>Block Limits</FriendlyName>

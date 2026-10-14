@@ -16,7 +16,7 @@ public class PluginConfig : PluginSdk.Config.PluginConfig, IPluginConfig
     [BoolOption("Import vanilla block type limits into BlockLimits checks.", Parent = "main-core")]
     public bool UseVanillaLimits { get; set => SetField(ref field, value); }
 
-    [StringOption(description: "Message returned when a block limit is reached. {BL}=block names, {BC}=count.", Parent = "main-core")]
+    [StringOption(description: "Message returned when a block limit is reached. {BL}=block names, {BC}=count, {LIMIT}=limit name.", Parent = "main-core")]
     public string DenyMessage { get; set => SetField(ref field, value); } = "Limit reached: {BC} blocks denied. BlockNames: {BL}";
 
     [IntOption(0, int.MaxValue, "Maximum blocks on small grids. 0 disables this check.", Parent = "main-grid")]
@@ -71,7 +71,7 @@ public struct LimitRule
     [StructMember("Player, faction, or grid identity/entity ids ignored by this rule.")]
     public List<string> Exceptions { get; set; }
 
-    [StructMember("Ignore NPC-owned blocks.")]
+    [StructMember("Leave blocks built or owned by NPCs out of the counts, and NPCs out of the limit.")]
     public bool IgnoreNpcs { get; set; }
 }
 
