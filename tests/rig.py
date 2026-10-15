@@ -28,6 +28,8 @@ Paths, all overridable by environment variables:
     BL_REMOTE_REPO           Remote plugin working copy
     BL_DIRECT_TRANSPORT_REPO DirectTransport working copy
 
+BL_SURVIVAL=1 makes the test world a survival world.
+
 The server and the clients download hub plugins from GitHub. On a machine
 GitHub's API rate limits, export PULSAR_GITHUB_TOKEN: Pulsar and Magnetar read
 it from the environment the rig passes on.
@@ -76,6 +78,8 @@ sys.path.insert(0, str(REMOTE_REPO / "skills" / "se-remote"))
 from se_remote import RemoteAPI  # noqa: E402
 
 TASK = os.environ.get("BL_TASK", "blocklimits")
+# BL_SURVIVAL=1 runs the world in survival mode, player A with creative tools
+SURVIVAL = os.environ.get("BL_SURVIVAL") == "1"
 TEST_ROOT = HOME / ".se-test"
 
 BLOCK_LIMITS_ID = "9103FB18-9813-4B64-9D87-A58434266D93"

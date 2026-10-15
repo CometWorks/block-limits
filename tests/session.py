@@ -46,6 +46,7 @@ WORLD_SETTINGS = {
     "BlockLimitsEnabled": "PER_PLAYER",
     "TotalPCU": "4000000",
     "MaxBlocksPerPlayer": "0",
+    **({"GameMode": "Survival"} if rig.SURVIVAL else {}),
 }
 VANILLA_LIMITS = {"Collector": 3}
 
@@ -169,15 +170,71 @@ class Player:
             assert time.monotonic() < deadline, f"{cell} was not removed"
             time.sleep(0.3)
 
-    def stand_by(self, pad: world.Pad | None = None) -> None:
-        """Moves beside the row of pads, or next to one. Building needs no
-        proximity, but the server takes terminal changes only from a player
-        near the block."""
+    def paste(
+        self,
+        name: str,
+        blocks: str,
+        position,
+        size: str = "Large",
+        timeout: float = 10.0,
+        static: bool = False,
+        spinner: bool = False,
+    ):
+        """Pastes a grid of these blocks, owned by this player, through Remote,
+        lined up with the pads. Returns the pasted grid's id, or None if the
+        server refused the paste: Remote gives up waiting for it then."""
+        try:
+            pasted = self.api.paste_blueprint(
+                xml=world.blueprint(name, blocks, size, static),
+                position=position,
+                forward=(0, 0, -1),
+                up=(0, 1, 0),
+                display_name=name,
+                own=True,
+                timeout_seconds=timeout,
+                spinner=spinner,
+            )
+        except Exception:  # noqa: BLE001 -- Remote's error for a paste that never came
+            return None
+        return pasted[0]["entityId"]
+
+    def paste_onto(self, pad: world.Pad, cell, blocks: str, timeout: float = 10.0):
+        """Pastes blocks onto a pad, the blueprint's first block into the
+        cell, owned by this player. Returns the pad's block count after, or
+        None if the server refused the paste."""
+        try:
+            result = self.api.paste_to_grid(
+                pad.entity_id,
+                tuple(cell),
+                xml=world.blueprint("Onto " + pad.name, blocks, pad.size),
+                timeout_seconds=timeout,
+            )
+        except Exception:  # noqa: BLE001 -- refused, Remote gave up waiting
+            return None
+        return result["blocksAfter"]
+
+    def hud_since(self, latest: int) -> list[str]:
+        """The HUD notifications that came after the latest one seen"""
+        reply = self.api.get_hud_notifications(latest)
+        return [n["text"] for n in reply["notifications"]]
+
+    def grid_named(self, name: str) -> bool:
+        """Whether this client sees a grid of this name"""
+        return any(g.get("name") == name for g in self.api.list_grids())
+
+    def stand_by(self, pad: world.Pad | None = None, cell=None) -> None:
+        """Moves beside the row of pads, next to one, or above one of its
+        cells. Building needs no proximity, but the server takes terminal
+        changes only from a player near the block."""
         if pad is None:
             self.api.character_teleport(*pads.STANDING)
-        else:
+        elif cell is None:
             x, y, z = pad.position
             self.api.character_teleport(x - 4.0, y + 2.0, z + 2.0)
+        else:
+            size = world.GRID_SIZE_M[pad.size]
+            x, y, z = (p + size * c for p, c in zip(pad.position, cell))
+            self.api.character_teleport(x, y + 8.0, z)
         time.sleep(2)
 
 
@@ -199,6 +256,9 @@ def prepare() -> None:
         pads.EXTRA_GRIDS,
         WORLD_SETTINGS,
         VANILLA_LIMITS,
+        # In survival only a space master may be moved to the pads; B still has
+        # no creative tools and builds with materials
+        {CLIENT_B.steam_id: "SpaceMaster"} if rig.SURVIVAL else None,
     )
     SERVER.prepare([CLIENT_A.steam_id])
     SERVER.write_plugin_config(rig.plugin_config([DECOYS]))
@@ -212,8 +272,23 @@ def join(client: rig.Client) -> rig.RemoteAPI:
     rig.wait_world(api)
     rig.ensure_character(api)
     rig.focus_gameplay(api)
+    if rig.SURVIVAL and client is CLIENT_A:
+        # The administrator pastes and builds the way admins do in survival
+        api.set_admin_flag("creativeTools", True)
     api.character_teleport(*pads.STANDING)
+    wait_for_pads(api)
     return api
+
+
+def wait_for_pads(api: rig.RemoteAPI, timeout: float = 180.0) -> None:
+    """Waits until the client has every pad. After a restart they stream in
+    while the tests already run."""
+    wanted = {p.entity_id for p in pads.ALL}
+    deadline = time.monotonic() + timeout
+    while missing := wanted - {g["entityId"] for g in api.list_grids()}:
+        if time.monotonic() > deadline:
+            raise TimeoutError(f"The client has no pads {sorted(missing)}")
+        time.sleep(1)
 
 
 def join_all(clients=CLIENTS) -> None:

@@ -11,8 +11,11 @@ using Sandbox.Game.Entities.Blocks;
 using Sandbox.Game.Entities.Cube;
 using Sandbox.Game.EntityComponents;
 using Sandbox.Game.Weapons;
+using Sandbox.Game.World;
 using VRage.FileSystem;
+using VRage.Game;
 using VRage.Game.ModAPI;
+using VRage.ObjectBuilders;
 using VRage.Plugins;
 
 namespace BlockLimitsProbe;
@@ -166,5 +169,26 @@ public sealed class ProbeCommands : CommandModule
         return $"Probe tool: center={cell.X:F2},{cell.Y:F2},{cell.Z:F2} radius={tool.DetectorSphere.Radius / tool.CubeGrid.GridSize:F2} "
             + $"enabled={tool.Enabled} functional={tool.IsFunctional} working={tool.IsWorking} "
             + $"powered={tool.ResourceSink?.IsPoweredByType(MyResourceDistributorComponent.ElectricityId)}";
+    }
+
+    [Command("enabled", "Whether a functional block is switched on, on the server.")]
+    [Permission(MyPromoteLevel.Admin)]
+    public string Enabled(long blockId) =>
+        MyEntities.GetEntityById(blockId) is MyFunctionalBlock block
+            ? $"Probe enabled: {block.Enabled}"
+            : "Probe enabled: no block";
+
+    [Command("give", "Puts components into a player's character inventory.")]
+    [Permission(MyPromoteLevel.Admin)]
+    public string Give(long identityId, string subtype, int amount)
+    {
+        MyIdentity identity = MySession.Static.Players.TryGetIdentity(identityId);
+        if (identity?.Character == null)
+            return "Probe give: no character";
+
+        var id = new MyDefinitionId(typeof(MyObjectBuilder_Component), subtype);
+        var item = (MyObjectBuilder_PhysicalObject)MyObjectBuilderSerializer.CreateNewObject(id);
+        identity.Character.GetInventory().AddItems(amount, item);
+        return $"Probe give: {amount} {subtype}";
     }
 }

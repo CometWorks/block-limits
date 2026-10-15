@@ -31,10 +31,10 @@ public class PluginConfig : PluginSdk.Config.PluginConfig, IPluginConfig
     [IntOption(0, int.MaxValue, "Maximum blocks on static grids. 0 disables this check.", Parent = "main-grid")]
     public int MaxBlockSizeStations { get; set => SetField(ref field, value); }
 
-    [IntOption(0, int.MaxValue, "Maximum small grids per player. 0 disables this check.", Parent = "main-grid")]
+    [IntOption(0, int.MaxValue, "Maximum small grids per player, checked when the player starts or pastes a grid. A grid counts for its owners, or for its main builders while it has no owner; subgrids don't count. 0 disables this check.", Parent = "main-grid")]
     public int MaxSmallGridsPerPlayer { get; set => SetField(ref field, value); }
 
-    [IntOption(0, int.MaxValue, "Maximum large grids per player. 0 disables this check.", Parent = "main-grid")]
+    [IntOption(0, int.MaxValue, "Maximum large grids per player, checked when the player starts or pastes a grid. A grid counts for its owners, or for its main builders while it has no owner; subgrids don't count. 0 disables this check.", Parent = "main-grid")]
     public int MaxLargeGridsPerPlayer { get; set => SetField(ref field, value); }
 
     [ListOption(description: "Per-block limit rules.", Parent = "limit-rules")]

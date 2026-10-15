@@ -21,8 +21,8 @@ using VRage.Plugins;
 #if !LOCAL_BUILD
 using System.Reflection;
 
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.1.0.0")]
+[assembly: AssemblyFileVersion("1.1.0.0")]
 #endif
 
 namespace ServerPlugin;
@@ -136,7 +136,7 @@ public class Plugin : IPlugin, ICommonPlugin
         if (!Limits.CanAddBlock(grid, block.BlockDefinition, identityId, 1, out string limitName))
         {
             Log.Info("Removing block over limit '{0}': {1} on {2}", limitName, block.BlockDefinition.BlockPairName, grid.DisplayName);
-            NotifyPlacementBlocked(identityId, block.BlockDefinition, limitName);
+            Notify(identityId, new Denial(limitName, 1, new[] { BlockLimitService.BlockName(block.BlockDefinition) }));
             grid.RemoveBlock(block);
             return;
         }
@@ -144,24 +144,22 @@ public class Plugin : IPlugin, ICommonPlugin
         Limits.Add(block);
     }
 
-    private void NotifyPlacementBlocked(long identityId, MyCubeBlockDefinition definition, string limitName)
+    /// <summary>Sends the deny message to a player</summary>
+    public void Notify(long identityId, Denial denial)
     {
-        if (identityId == 0 || definition == null)
+        if (identityId == 0 || denial == null)
             return;
 
         try
         {
-            string blockName = string.IsNullOrWhiteSpace(definition.BlockPairName)
-                ? definition.Id.SubtypeName
-                : definition.BlockPairName;
             string message = string.IsNullOrWhiteSpace(Config?.DenyMessage)
                 ? "Limit reached: {BC} blocks denied. BlockNames: {BL}"
                 : Config.DenyMessage;
 
             message = message
-                .Replace("{BC}", "1")
-                .Replace("{BL}", blockName)
-                .Replace("{LIMIT}", limitName ?? "Block limit");
+                .Replace("{BC}", denial.Count.ToString())
+                .Replace("{BL}", string.Join(", ", denial.Blocks))
+                .Replace("{LIMIT}", denial.LimitName ?? "Block limit");
 
             MyVisualScriptLogicProvider.SendChatMessage(message, Name, identityId);
         }
