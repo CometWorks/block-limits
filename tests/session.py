@@ -46,6 +46,7 @@ WORLD_SETTINGS = {
     "BlockLimitsEnabled": "PER_PLAYER",
     "TotalPCU": "4000000",
     "MaxBlocksPerPlayer": "0",
+    **({"GameMode": "Survival"} if rig.SURVIVAL else {}),
 }
 VANILLA_LIMITS = {"Collector": 3}
 
@@ -176,21 +177,46 @@ class Player:
         position,
         size: str = "Large",
         timeout: float = 10.0,
+        static: bool = False,
+        spinner: bool = False,
     ):
-        """Pastes a grid of these blocks, owned by this player, through Remote.
-        Returns the pasted grid's id, or None if the server refused the paste:
-        Remote gives up waiting for it then."""
+        """Pastes a grid of these blocks, owned by this player, through Remote,
+        lined up with the pads. Returns the pasted grid's id, or None if the
+        server refused the paste: Remote gives up waiting for it then."""
         try:
             pasted = self.api.paste_blueprint(
-                xml=world.blueprint(name, blocks, size),
+                xml=world.blueprint(name, blocks, size, static),
                 position=position,
+                forward=(0, 0, -1),
+                up=(0, 1, 0),
                 display_name=name,
                 own=True,
                 timeout_seconds=timeout,
+                spinner=spinner,
             )
         except Exception:  # noqa: BLE001 -- Remote's error for a paste that never came
             return None
         return pasted[0]["entityId"]
+
+    def paste_onto(self, pad: world.Pad, cell, blocks: str, timeout: float = 10.0):
+        """Pastes blocks onto a pad, the blueprint's first block into the
+        cell, owned by this player. Returns the pad's block count after, or
+        None if the server refused the paste."""
+        try:
+            result = self.api.paste_to_grid(
+                pad.entity_id,
+                tuple(cell),
+                xml=world.blueprint("Onto " + pad.name, blocks, pad.size),
+                timeout_seconds=timeout,
+            )
+        except Exception:  # noqa: BLE001 -- refused, Remote gave up waiting
+            return None
+        return result["blocksAfter"]
+
+    def hud_since(self, latest: int) -> list[str]:
+        """The HUD notifications that came after the latest one seen"""
+        reply = self.api.get_hud_notifications(latest)
+        return [n["text"] for n in reply["notifications"]]
 
     def grid_named(self, name: str) -> bool:
         """Whether this client sees a grid of this name"""
@@ -230,6 +256,9 @@ def prepare() -> None:
         pads.EXTRA_GRIDS,
         WORLD_SETTINGS,
         VANILLA_LIMITS,
+        # In survival only a space master may be moved to the pads; B still has
+        # no creative tools and builds with materials
+        {CLIENT_B.steam_id: "SpaceMaster"} if rig.SURVIVAL else None,
     )
     SERVER.prepare([CLIENT_A.steam_id])
     SERVER.write_plugin_config(rig.plugin_config([DECOYS]))
@@ -243,6 +272,9 @@ def join(client: rig.Client) -> rig.RemoteAPI:
     rig.wait_world(api)
     rig.ensure_character(api)
     rig.focus_gameplay(api)
+    if rig.SURVIVAL and client is CLIENT_A:
+        # The administrator pastes and builds the way admins do in survival
+        api.set_admin_flag("creativeTools", True)
     api.character_teleport(*pads.STANDING)
     wait_for_pads(api)
     return api

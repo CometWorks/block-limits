@@ -59,17 +59,22 @@ internal static class MergeGuard
         if (limits == null || limits.CanMerge(grid, other, out Denial denial))
             return true;
 
-        // Switched off, the merge blocks don't try again every few frames. Not right
-        // now: the merge block calling us uses its other half after we return, and
-        // switching off lets go of it.
+        // Switched off, the merge blocks of the smaller grid don't try again every few
+        // frames; switched on again, they do. The other side stays on: a station's merge
+        // block notices a ship only as it comes close. Not right now: the merge block
+        // calling us uses its other half after we return, and switching off lets go of it.
         List<MyShipMergeBlock> blocks = mergeBlocks
             ? MergeBlocksBetween(grid, other)
             : new List<MyShipMergeBlock>();
-        if (blocks.Count != 0)
+        MyCubeGrid smaller = grid.BlocksCount <= other.BlocksCount ? grid : other;
+        List<MyShipMergeBlock> switchOff = blocks
+            .Where(block => block.CubeGrid == smaller)
+            .ToList();
+        if (switchOff.Count != 0)
             MySandboxGame.Static.Invoke(
                 () =>
                 {
-                    foreach (MyShipMergeBlock block in blocks)
+                    foreach (MyShipMergeBlock block in switchOff)
                         block.Enabled = false;
                 },
                 "BlockLimits"

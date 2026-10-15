@@ -241,11 +241,13 @@ def prepare(
     extra_grids: str = "",
     settings: dict | None = None,
     block_type_limits: dict | None = None,
+    promoted: dict | None = None,
 ) -> None:
     """A fresh copy of the template world (the game's Empty World) with the
     players (steam id -> (identity id, name)), the faction, the pads and more
     grids as sector object XML.
-    block_type_limits fills the world's vanilla block type limits."""
+    block_type_limits fills the world's vanilla block type limits, promoted maps
+    steam ids to promote levels."""
     if world.exists():
         shutil.rmtree(world)
     shutil.copytree(template, world)
@@ -280,6 +282,17 @@ def prepare(
             flags=re.S,
         )
         if name == "Sandbox.sbc":
+            promotions = "".join(
+                f"<item><Key>{steam_id}</Key><Value>{level}</Value></item>"
+                for steam_id, level in (promoted or {}).items()
+            )
+            text = re.sub(
+                r"<PromotedUsers>.*?</PromotedUsers>",
+                f"<PromotedUsers><dictionary>{promotions}</dictionary></PromotedUsers>",
+                text,
+                count=1,
+                flags=re.S,
+            )
             identities = "".join(_identity(i, n) for i, n in players.values())
             identities += _identity(PLAYER_C, "Charlie")
             text = _insert(text, "Identities", identities)
@@ -316,7 +329,7 @@ def prepare(
         path.write_text(text, encoding="utf-8")
 
 
-def blueprint(name: str, blocks: str, size: str = "Large") -> str:
+def blueprint(name: str, blocks: str, size: str = "Large", static: bool = False) -> str:
     """A bp.sbc document of one grid"""
     grid_xml = (
         "<CubeGrid><SubtypeName /><EntityId>0</EntityId>"
@@ -324,6 +337,8 @@ def blueprint(name: str, blocks: str, size: str = "Large") -> str:
         '<PositionAndOrientation><Position x="0" y="0" z="0" />'
         '<Forward x="0" y="0" z="-1" /><Up x="0" y="1" z="0" /></PositionAndOrientation>'
         f"<GridSizeEnum>{size}</GridSizeEnum><CubeBlocks>{blocks}</CubeBlocks>"
+        f"<IsStatic>{str(static).lower()}</IsStatic>"
+        f"<IsUnsupportedStation>{str(static).lower()}</IsUnsupportedStation>"
         f"<DisplayName>{name}</DisplayName></CubeGrid>"
     )
     return (

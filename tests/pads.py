@@ -128,6 +128,27 @@ MERGE_SHIP_BLOCK_ID = MERGE_SHIP_ID + 1
 MERGE_OK, MERGE_OK_SHIP_ID, _merge_ok_ship = _merge_pair("Merge OK", 1, 2)
 
 
+# Two decoys without a builder: blocks get pasted onto this grid
+PASTE_TARGET = pad(
+    "Paste target",
+    filled={0: ("Decoy", "LargeDecoy", 0), 1: ("Decoy", "LargeDecoy", 0)},
+)
+# Stations with two decoys each, for a pasted station that touches them
+STATIC_MERGE = pad(
+    "Static merge",
+    filled={0: ("Decoy", "LargeDecoy", 0), 1: ("Decoy", "LargeDecoy", 0)},
+)
+STATIC_MERGE_OK = pad(
+    "Static merge OK",
+    filled={0: ("Decoy", "LargeDecoy", 0), 1: ("Decoy", "LargeDecoy", 0)},
+)
+# A cargo container nobody owns, for player A to take over
+CLAIM = pad(
+    "Claim",
+    filled={0: ("CargoContainer", "LargeBlockSmallContainer", 0)},
+)
+
+
 def _lattice(x0: int, sockets: int) -> list:
     cells = []
     for x in range(x0, x0 + 2 * sockets + 1):

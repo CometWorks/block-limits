@@ -5,8 +5,8 @@ Each size test sets the limit one block above the grid's current size, so the
 first block fits and the second doesn't. The other pad shows the limit leaves
 other kinds of grid alone.
 
-The count tests start new grids with the cube builder's request, sent by the
-probe for player A: a headless client has no placement gizmo to aim one.
+The count tests start new grids with the cube builder's request, which Remote
+sends for the client: a headless client has no placement gizmo to aim.
 """
 
 from __future__ import annotations
@@ -17,7 +17,9 @@ import time
 import pytest
 
 import pads
+import rig
 import world
+from se_remote import SetOp
 
 ARMOR = {"Large": "LargeBlockArmorBlock", "Small": "SmallBlockArmorBlock"}
 
@@ -54,35 +56,40 @@ _spots = iter(
 OPTION = {"Large": "MaxLargeGridsPerPlayer", "Small": "MaxSmallGridsPerPlayer"}
 
 
-def grid_count(game, size: str) -> int:
-    """Player A's grids of this size, as counted when the config was last put
+def grid_count(game, size: str, player: int = world.PLAYER_A) -> int:
+    """A player's grids of this size, as counted when the config was last put
     in"""
-    reply = game.a.probe("grids", world.PLAYER_A)
+    reply = game.a.probe("grids", player)
     match = re.fullmatch(r"Probe grids: small=(\d+) large=(\d+)", reply)
     assert match, reply
     return int(match[2] if size == "Large" else match[1])
 
 
-def counted(game, size: str, expected: int, **options) -> None:
-    """Waits until the count of player A's grids is the expected one"""
+def counted(game, size: str, expected: int, player: int = world.PLAYER_A, **options):
+    """Waits until the count of the player's grids is the expected one"""
     deadline = time.monotonic() + 30
     while True:
         game.configure(**options)
-        count = grid_count(game, size)
+        count = grid_count(game, size, player)
         if count == expected:
             return
         assert time.monotonic() < deadline, f"{count} {size} grids, not {expected}"
         time.sleep(1)
 
 
-def new_grid(game, size: str) -> None:
-    reply = game.a.probe("newgrid", world.PLAYER_A, ARMOR[size], *next(_spots))
-    assert reply == "Probe newgrid: sent", reply
+def new_grid(player, size: str) -> bool | None:
+    """Starts a new station of one armor block the way the cube builder does,
+    and returns the server's answer"""
+    report = player.api.character_build_grid(
+        ARMOR[size], next(_spots), timeout_seconds=15
+    )
+    assert report["sent"], report
+    return report["reply"]
 
 
-def denied(game, before, text: str) -> None:
+def denied(player, before, text: str) -> None:
     deadline = time.monotonic() + 15
-    while text not in [t for _, t in game.a.chat_since(before)]:
+    while text not in [t for _, t in player.chat_since(before)]:
         assert time.monotonic() < deadline, f"No {text!r} in the chat"
         time.sleep(0.5)
 
@@ -94,28 +101,48 @@ def test_grid_count_limit_per_player(game, size):
     a = game.a
     game.configure()
     count = grid_count(game, size)
-    new_grid(game, size)
+    assert new_grid(a, size) is True
     counted(game, size, count + 1)
 
     limit = {OPTION[size]: count + 1, "DenyMessage": "{LIMIT}"}
     game.configure(**limit)
     message = f"{size} grids per player"
     before = a.mark()
-    new_grid(game, size)
-    denied(game, before, message)
+    assert new_grid(a, size) is False
+    denied(a, before, message)
 
     before = a.mark()
     blocks = world.block("CubeBlock", ARMOR[size], (0, 0, 0))
     name = f"Pasted {size} grid"
     assert a.paste(name, blocks, next(_spots), size) is None
-    denied(game, before, message)
+    denied(a, before, message)
     assert not a.grid_named(name)
     counted(game, size, count + 1, **limit)
 
     limit[OPTION[size]] = count + 2
     game.configure(**limit)
-    new_grid(game, size)
+    assert new_grid(a, size) is True
     counted(game, size, count + 2, **limit)
+
+
+def test_grid_count_limit_of_a_player_without_rights(game):
+    """Player B, no admin and no creative tools, builds with materials in a
+    survival world"""
+    b = game.b
+    game.configure()
+    if rig.SURVIVAL:
+        assert game.a.probe("give", world.PLAYER_B, "SteelPlate", 200).startswith(
+            "Probe give: "
+        )
+    count = grid_count(game, "Large", world.PLAYER_B)
+    limit = {"MaxLargeGridsPerPlayer": count + 1, "DenyMessage": "{LIMIT}"}
+    game.configure(**limit)
+    assert new_grid(b, "Large") is True
+    counted(game, "Large", count + 1, world.PLAYER_B, **limit)
+
+    before = b.mark()
+    assert new_grid(b, "Large") is False
+    denied(b, before, "Large grids per player")
 
 
 def test_split_over_the_grid_limit_is_allowed(game):
@@ -130,5 +157,32 @@ def test_split_over_the_grid_limit_is_allowed(game):
     counted(game, "Large", count + 1, **limit)
 
     before = a.mark()
-    new_grid(game, "Large")
-    denied(game, before, "Large grids per player")
+    assert new_grid(a, "Large") is False
+    denied(a, before, "Large grids per player")
+
+
+def test_taking_over_a_grid_at_the_limit_is_allowed(game):
+    """Player A takes over a grid nobody owns while at the limit: the grid is
+    A's, and the next new grid is refused"""
+    a = game.a
+    game.configure()
+    count = grid_count(game, "Large")
+    limit = {"MaxLargeGridsPerPlayer": count, "DenyMessage": "{LIMIT}"}
+    game.configure(**limit)
+    pad = pads.CLAIM
+    a.stand_by(pad)
+    try:
+        a.api.batch(
+            sets=[
+                SetOp.owner(
+                    pad.entity_id, pad.socket_cell(0), identity_id=a.identity_id
+                )
+            ]
+        ).set(0)
+        counted(game, "Large", count + 1, **limit)
+    finally:
+        a.stand_by()
+
+    before = a.mark()
+    assert new_grid(a, "Large") is False
+    denied(a, before, "Large grids per player")

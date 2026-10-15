@@ -90,9 +90,12 @@ What it covers:
   them, with block groups, grid types, exceptions (player, grid, faction), NPC blocks,
   a zero limit and the denial message (`test_rules.py`)
 - The grid size limits (`test_grid_size.py`)
-- The grid count limits per player: a new grid from the cube builder, a pasted grid,
-  and a split over the limit (`test_grid_size.py`)
-- Grids merging, splitting, pasted and welded from a projection (`test_grids.py`)
+- The grid count limits per player: a new grid from the cube builder and a pasted
+  grid, for an administrator and for a player without rights; a split and an
+  ownership change over the limit (`test_grid_size.py`)
+- Grids merging with merge blocks or as touching stations, the merge messages'
+  10 seconds, splitting, pasted (with the game's "paste failed" notice and the paste
+  spinner), pasted onto a grid and welded from a projection (`test_grids.py`)
 - The `!blocklimit` commands, their permissions and bad input (`test_commands.py`)
 - `BlockLimits.PluginApi.Limits.CanAdd` (`test_api.py`)
 - Importing the vanilla block type limits (`test_vanilla.py`)
@@ -102,15 +105,16 @@ What it covers:
 The test world is the game's Empty World with the test players, a faction and a row of
 pads to build on, written fresh for every run. `tests/probe` is a test-only server
 plugin the server loads next to Block Limits: it calls the cross-plugin API, reads the
-plugin's counts, puts a new config into the running plugin, so the tests don't need
-a restart for each config, and sends the cube builder's request for a new grid, which a
-headless client can't aim.
+plugin's counts, reads whether a block is switched on, puts components into a
+player's inventory and puts a new config into the running plugin, so the tests don't
+need a restart for each config.
 
 ### Running
 
 You need the Space Engineers client and Dedicated Server from Steam, Magnetar and
 Pulsar installed, [uv](https://docs.astral.sh/uv/), and working copies of
-[Remote](https://github.com/CometWorks/remote) and
+[Remote](https://github.com/CometWorks/remote) (with `character/build-grid` and
+`blueprints/paste-to-grid`) and
 [DirectTransport](https://github.com/CometWorks/direct-transport). The rig takes the
 ports, client ids and folders from a test slot of the `se` workspace
 (`notes/parallel-test-work`), and waits for free memory before each process it starts.
@@ -119,10 +123,18 @@ ports, client ids and folders from a test slot of the `se` workspace
 uv run pytest
 ```
 
+The grid tests also run in a survival world, where player A has creative tools on and
+player B builds with materials (B is a space master there, so the rig can move it to
+the pads). The welding test is skipped there:
+
+```bash
+BL_SURVIVAL=1 uv run pytest tests/test_grids.py tests/test_grid_size.py
+```
+
 The server and the clients download their hub plugins from GitHub. Where GitHub's API
 rate limits you, export `PULSAR_GITHUB_TOKEN`; Pulsar and Magnetar read it.
 
-A full run takes about 26 minutes, most of it the server and clients starting.
+A full run takes about 35 minutes, the survival run about 13, most of it the server and clients starting.
 `tests/rig.py` lists the environment variables that point the rig at other
 installations and working copies. To keep the server and clients running between
 runs while you work on a test:
