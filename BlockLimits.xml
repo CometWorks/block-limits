@@ -19,9 +19,12 @@
     <!-- Optional plugin description. If omitted, this will be the same as the Tooltip. 1000 characters max. -->
     <Description>
         BlockLimits is a Space Engineers dedicated server plugin for Magnetar that
-        enforces block limit rules by player, faction, and grid. It supports grid size
-        limits, optional import of the vanilla block type limits, and the !blocklimit
-        chat commands for inspecting and managing limits in-game.
+        enforces block limit rules by player, faction, and grid. It checks blocks as
+        they are built or welded from a projection, and checks pastes and merges as a
+        whole: a paste or merge that would go over a limit is refused. It also limits
+        the blocks per grid and the small and large grids per player, can import the
+        vanilla block type limits, and has !blocklimit chat commands for inspecting
+        and managing limits in-game.
 
         Built on the Magnetar PluginSdk with its config UI rendered by Quasar, it also
         exposes a cross-plugin API (BlockLimits.PluginApi.Limits.CanAdd) that other
