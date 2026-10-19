@@ -3,7 +3,7 @@ working copy, and two headless game clients that join it over DirectTransport
 and are driven through the Remote plugin.
 
 Every port, client id and folder comes from a test slot of the workspace
-(notes/parallel-test-work/NOTE.md in the se workspace), so a run doesn't
+(testing/parallel-test-work/README.md in the se workspace), so a run doesn't
 collide with other tests on the machine. BL_TASK names the slot; it is claimed
 on first use and kept until released with slot.sh. BL_SLOT skips the claim.
 
@@ -18,7 +18,7 @@ floor (SE_RAM_FLOOR_GIB) and holds the shared test lock.
 
 Paths, all overridable by environment variables:
 
-    BL_WORKSPACE             the se workspace, for its notes/ (default: the
+    BL_WORKSPACE             the se workspace, for its testing/ (default: the
                              folder that holds se1/plugins/block-limits)
     BL_MAGNETAR              Magnetar install (~/.config/Magnetar)
     BL_PULSAR                Pulsar install the client folders are copied from
@@ -53,8 +53,8 @@ REPO = Path(__file__).resolve().parent.parent
 TESTS = REPO / "tests"
 PROBE = TESTS / "probe"
 WORKSPACE = Path(os.environ.get("BL_WORKSPACE", REPO.parents[2]))
-PARALLEL = WORKSPACE / "notes" / "parallel-test-work"
-NEW_PULSAR = WORKSPACE / "notes" / "pulsar-dev-instances" / "new-pulsar-instance.sh"
+PARALLEL = WORKSPACE / "testing" / "parallel-test-work"
+NEW_PULSAR = WORKSPACE / "testing" / "pulsar-dev-instances" / "new-pulsar-instance.sh"
 MAGNETAR = Path(os.environ.get("BL_MAGNETAR", HOME / ".config/Magnetar"))
 PULSAR = Path(os.environ.get("BL_PULSAR", HOME / ".config/Pulsar"))
 STEAM = HOME / ".steam/steam/steamapps/common"
@@ -85,7 +85,7 @@ TEST_ROOT = HOME / ".se-test"
 BLOCK_LIMITS_ID = "9103FB18-9813-4B64-9D87-A58434266D93"
 PROBE_ID = "96F30187-73B9-4030-94A6-A4A3E17DCC08"
 
-# Measured RSS (notes/parallel-test-work/NOTE.md); the server is a guess
+# Measured RSS (testing/parallel-test-work/README.md); the server is a guess
 CLIENT_GIB = 3.7
 SERVER_GIB = 4.0
 
